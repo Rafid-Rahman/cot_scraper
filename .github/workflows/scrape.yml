@@ -40,4 +40,4 @@ jobs:
         GOOGLE_CREDS_JSON: ${{ secrets.GOOGLE_CREDS_JSON }}
 
     - name: Run Puppeteer script
-      run: node cot_scraping.js
+      run: node cot_testing.js
