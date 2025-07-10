@@ -12,7 +12,6 @@ function getColumnName(n) {
 }
 
 const fs = require('fs');
-fs.writeFileSync('creds.json', process.env.GOOGLE_CREDS_JSON);
 const CREDS_PATH = 'creds.json';
 const SPREADSHEET_ID = '11bcHqLaR6Of0c-c1LzX_wCHwbA9fSXI5wgDctysV9Ss';
 const SHEET_NAME = 'Sheet31';
