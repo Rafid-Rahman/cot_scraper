@@ -1,0 +1,43 @@
+name: Daily Commodity Scraper
+
+on:
+  schedule:
+    # Runs Monday–Friday at 5:15 PM BDT = 11:15 AM UTC
+    - cron: '45 11 * * 1-5'
+  workflow_dispatch:  # Allow manual trigger
+  push:               # Run on push to main branch
+    branches:
+      - main
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Setup headless Chromium
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxss1 libappindicator1 libindicator7 fonts-liberation \
+          libnss3 lsb-release xdg-utils wget ca-certificates libasound2
+        wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+        sudo dpkg -i google-chrome*.deb || sudo apt-get -f install -y
+        sudo apt-get install -y google-chrome-stable
+
+    - name: Write creds.json from secret
+      run: echo "$GOOGLE_CREDS_JSON" > creds.json
+      env:
+        GOOGLE_CREDS_JSON: ${{ secrets.GOOGLE_CREDS_JSON }}
+
+    - name: Run Puppeteer script
+      run: node cot_scraping.js
