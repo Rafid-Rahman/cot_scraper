@@ -1,6 +1,25 @@
 const puppeteer = require('puppeteer');
 const { google } = require('googleapis');
+const fs = require('fs');
 
+// -------- CONFIG --------
+const CREDS_PATH = 'creds.json';
+const SPREADSHEET_ID = '11bcHqLaR6Of0c-c1LzX_wCHwbA9fSXI5wgDctysV9Ss';
+const SHEET_NAME = 'Final Dashboard';
+const SHEET_ID = '657769042';
+
+const monthCodes = {
+  F: 'Jan', G: 'Feb', H: 'Mar', J: 'Apr', K: 'May',
+  M: 'Jun', N: 'Jul', Q: 'Aug', U: 'Sep', V: 'Oct',
+  X: 'Nov', Z: 'Dec',
+};
+
+const commoditySymbols = [
+  'CC','CL','CT','GC','GF','HE','HG','HO','KC','LB','LE','NG',
+  'OJ','PA','PL','RB','SB','SI','ZC','ZL','ZM','ZO','ZR','ZS','ZW'
+];
+
+// -------- HELPERS --------
 function getColumnName(n) {
   let s = '';
   while (n > 0) {
@@ -11,21 +30,12 @@ function getColumnName(n) {
   return s;
 }
 
-const fs = require('fs');
-const CREDS_PATH = 'creds.json';
-const SPREADSHEET_ID = '11bcHqLaR6Of0c-c1LzX_wCHwbA9fSXI5wgDctysV9Ss';
-const SHEET_NAME = 'Sheet31';
-const SHEET_ID = '3079049';
-
-const monthCodes = {
-  F: 'Jan', G: 'Feb', H: 'Mar', J: 'Apr', K: 'May',
-  M: 'Jun', N: 'Jul', Q: 'Aug', U: 'Sep', V: 'Oct',
-  X: 'Nov', Z: 'Dec',
-};
-
-const commoditySymbols = [
-  'CL'
-];
+function getColumnRange(index) {
+  const startIndex = index * 7;
+  const start = getColumnName(startIndex + 1);
+  const end = getColumnName(startIndex + 6);
+  return `${start}2:${end}15`;
+}
 
 function parseContractCode(contract) {
   if (contract.includes('Cash')) {
@@ -47,13 +57,7 @@ function parsePrice(raw) {
   return parseFloat(raw.replace(',', '.'));
 }
 
-function getColumnRange(index) {
-  const startIndex = index * 7; // 6 columns + 1 gap
-  const start = getColumnName(startIndex + 1);
-  const end = getColumnName(startIndex + 6);
-  return `${start}2:${end}15`;
-}
-
+// -------- GOOGLE SETUP --------
 async function authorizeGoogle() {
   const auth = new google.auth.GoogleAuth({
     keyFile: CREDS_PATH,
@@ -83,21 +87,35 @@ async function insertRows(sheets) {
   });
 }
 
+// -------- MAIN SCRAPING --------
 (async () => {
   let browser = null;
   try {
     const auth = await authorizeGoogle();
     const sheets = google.sheets({ version: 'v4', auth });
 
-    browser = await puppeteer.launch({ headless: true });
-    const page = await browser.newPage();
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1920,1080'],
+      defaultViewport: { width: 1920, height: 1080 },
+    });
 
+    const page = await browser.newPage();
     const symbolDataMap = {};
 
     for (const symbol of commoditySymbols) {
       const url = `https://www.barchart.com/futures/quotes/${symbol}*0/futures-prices?timeFrame=daily`;
-      console.log(`Navigating to ${url}`);
+      console.log(`🔍 Scraping ${symbol} from ${url}`);
       await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+
+      // Scroll grid using DOM context
+      for (let i = 0; i < 20; i++) {
+        await page.evaluate(() => {
+          const el = document.querySelector('bc-data-grid');
+          if (el) el.scrollBy(0, 600);
+        });
+        await page.waitForTimeout(600);
+      }
 
       const frontContractCode = await page.evaluate(() => {
         const h1 = document.querySelector('h1.inline-block span:nth-child(2)');
@@ -110,14 +128,6 @@ async function insertRows(sheets) {
 
       const cutoff = new Date(frontDate);
       cutoff.setMonth(cutoff.getMonth() + 11);
-
-      const gridBox = await page.$('bc-data-grid');
-      const boundingBox = await gridBox.boundingBox();
-      for (let i = 0; i < 20; i++) {
-        await page.mouse.move(boundingBox.x + boundingBox.width / 2, boundingBox.y + boundingBox.height / 2);
-        await page.mouse.wheel({ deltaY: 150 });
-        await new Promise(res => setTimeout(res, 700));
-      }
 
       const gridHandle = await page.$('bc-data-grid');
       const gridShadowRoot = await gridHandle.evaluateHandle(el => el.shadowRoot);
@@ -158,15 +168,14 @@ async function insertRows(sheets) {
           time,
         ]);
 
-        await new Promise(res => setTimeout(res, 1000));
+        await page.waitForTimeout(300);
       }
 
       symbolDataMap[symbol] = collectedRows;
     }
 
-    await insertRows(sheets); // Insert 14 rows at top
+    await insertRows(sheets);
 
-    // Write to each commodity block
     for (let i = 0; i < commoditySymbols.length; i++) {
       const symbol = commoditySymbols[i];
       const range = getColumnRange(i);
@@ -181,7 +190,7 @@ async function insertRows(sheets) {
       });
     }
 
-    console.log(`✅ Successfully inserted all data in block format.`);
+    console.log(`✅ All commodities scraped and written to Google Sheets.`);
 
   } catch (err) {
     console.error('❌ Error:', err);
