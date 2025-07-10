@@ -1,0 +1,17 @@
+{
+  "name": "market-gauge",
+  "version": "1.0.0",
+  "main": "forex_currency.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "excel-column-name": "^1.0.1",
+    "googleapis": "^150.0.1",
+    "puppeteer": "^24.10.2"
+  }
+}
